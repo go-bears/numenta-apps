@@ -40,7 +40,7 @@ from nta.utils import config
 _SAMPLE_CONF_CONTENTS = """
 # MySQL database connection parameters
 [config_test_database]
-db = grok
+db = htm-it
 host = localhost
 user = root
 passwd =
@@ -104,6 +104,29 @@ class ConfigTest(unittest.TestCase):
       environPatch.stop()
 
 
+  def testRepr(self):
+
+    configName = "test.conf"
+    with self._redirectConfigBase(configName,
+                                  _SAMPLE_CONF_CONTENTS) as baseConfigDir:
+      conf = config.Config(configName, baseConfigDir)
+
+      reprText = repr(conf)
+      self.assertEqual(
+        reprText,
+        "Config<name=test.conf, mode=1, baseDir={}>".format(baseConfigDir))
+
+
+  def testConfigNamePropertyGetter(self):
+
+    configName = "test.conf"
+    with self._redirectConfigBase(configName,
+                                  _SAMPLE_CONF_CONTENTS) as baseConfigDir:
+      conf = config.Config(configName, baseConfigDir)
+
+      self.assertEqual(conf.configName, configName)
+
+
   def testHierarchicalConfigNameTypeError(self):
     # Expects TypeError when given configName is hierarchical
     configName = "a/b/c/hieararchical_config_name.conf"
@@ -124,7 +147,7 @@ class ConfigTest(unittest.TestCase):
                                   _SAMPLE_CONF_CONTENTS) as baseConfigDir:
       c = config.Config(configName, baseConfigDir)
 
-      self.assertEqual(c.get("config_test_database", "db"), "grok")
+      self.assertEqual(c.get("config_test_database", "db"), "htm-it")
       self.assertEqual(c.CONFIG_NAME, configName)
 
 
@@ -145,7 +168,7 @@ class ConfigTest(unittest.TestCase):
     with self._redirectConfigBase(configName,
                                   _SAMPLE_CONF_CONTENTS) as baseConfigDir:
       c1 = config.Config(configName, baseConfigDir)
-      self.assertEqual(c1.get("config_test_database", "db"), "grok")
+      self.assertEqual(c1.get("config_test_database", "db"), "htm-it")
       self.assertEqual(c1.get("rabbit", "host"), "localhost")
 
 
@@ -174,7 +197,7 @@ class ConfigTest(unittest.TestCase):
       self.assertEqual(c1.get("rabbit", "host"), "new_host")
 
       # and that the original option still has the expected value
-      self.assertEqual(c1.get("config_test_database", "db"), "grok")
+      self.assertEqual(c1.get("config_test_database", "db"), "htm-it")
 
 
   def testReloadConfigAfterOverrideObjectChanges(self):
@@ -182,7 +205,7 @@ class ConfigTest(unittest.TestCase):
     with self._redirectConfigBase(configName,
                                   _SAMPLE_CONF_CONTENTS) as baseConfigDir:
       c1 = config.Config(configName, baseConfigDir)
-      self.assertEqual(c1.get("config_test_database", "db"), "grok")
+      self.assertEqual(c1.get("config_test_database", "db"), "htm-it")
       self.assertEqual(c1.get("rabbit", "host"), "localhost")
 
 
@@ -214,7 +237,7 @@ class ConfigTest(unittest.TestCase):
       self.assertEqual(c1.get("rabbit", "host"), "new_host")
 
       # and that the original option still has the expected value
-      self.assertEqual(c1.get("config_test_database", "db"), "grok")
+      self.assertEqual(c1.get("config_test_database", "db"), "htm-it")
 
 
   def testGetEnvVarOverrideName(self):
@@ -240,7 +263,7 @@ class ConfigTest(unittest.TestCase):
     with self._redirectConfigBase(configName,
                                   _SAMPLE_CONF_CONTENTS) as baseConfigDir:
       c = config.Config(configName, baseConfigDir)
-      self.assertEqual(c.get(section, option), "grok")
+      self.assertEqual(c.get(section, option), "htm-it")
       del c
 
       # Now, try with an override
@@ -249,7 +272,7 @@ class ConfigTest(unittest.TestCase):
         configName, section, option)
 
       overrideValues = {
-        envVarName : "grok rules!"
+        envVarName : "htm-it rules!"
       }
 
       with patch.dict(config.os.environ, values=overrideValues):
@@ -365,7 +388,7 @@ class ConfigTest(unittest.TestCase):
         configName, section, option)
 
       overrideValues = {
-        envVarName : "grok rules!"
+        envVarName : "htm-it rules!"
       }
 
       with patch.dict(config.os.environ, values=overrideValues):
@@ -389,7 +412,7 @@ class ConfigTest(unittest.TestCase):
       c = config.Config(configName, baseConfigDir)
       originalItemsMap = dict(c.items(section))
       self.assertEqual(len(originalItemsMap), 5)
-      self.assertEqual(originalItemsMap[option], "grok")
+      self.assertEqual(originalItemsMap[option], "htm-it")
       del c
 
       # Compare against ConfigParser.ConfigParser
@@ -407,7 +430,7 @@ class ConfigTest(unittest.TestCase):
         configName, section, option)
 
       overrideValues = {
-        envVarName : "grok rules!"
+        envVarName : "htm-it rules!"
       }
 
       with patch.dict(config.os.environ, values=overrideValues):
@@ -457,7 +480,7 @@ class ConfigTest(unittest.TestCase):
         configName, section, option)
 
       overrideValues = {
-        envVarName : "grok rules!"
+        envVarName : "htm-it rules!"
       }
 
       with patch.dict(config.os.environ, values=overrideValues):

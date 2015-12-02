@@ -18,19 +18,26 @@
 #
 # http://numenta.org/licenses/
 # ----------------------------------------------------------------------
-from optparse import OptionParser
-import os
-import traceback
+import logging
 import types
-from urlparse import urljoin
-import xmlrpclib
 
 from nta.utils import error_reporting
-from nta.utils.config import Config
+from nta.utils.supervisor_utils import SupervisorClient
+
+from taurus.monitoring.monitor_dispatcher import MonitorDispatcher
+from taurus.monitoring import (loadConfig,
+                               loadEmailParamsFromConfig,
+                               logging_support,
+                               MonitorOptionParser,
+                               TaurusMonitorError)
 
 
 
-class SupervisorMonitorError(Exception):
+g_logger = logging.getLogger(__name__)
+
+
+
+class SupervisorMonitorError(TaurusMonitorError):
   pass
 
 
@@ -45,113 +52,102 @@ class SupervisorProcessInFatalState(SupervisorMonitorError):
 
 
 
-class SupervisorChecker(object):
-  parser = OptionParser()
+class SupervisorChecker(MonitorDispatcher):
 
-  parser.add_option("--monitorConfPath",
-                    help=("Specify full path to ConfigParser-compatible"
-                          " monitor conf file, containing a [S1] section and"
-                          " the following configuration directives:\n\n"
-                          "MODELS_MONITOR_EMAIL_SENDER_ADDRESS\n"
-                          "MODELS_MONITOR_EMAIL_RECIPIENTS\n"
-                          "MODELS_MONITOR_EMAIL_AWS_REGION\n"
-                          "MODELS_MONITOR_EMAIL_SES_ENDPOINT"))
+  parser = MonitorOptionParser()
+
   parser.add_option("--serverUrl",
                     help="Supervisor API (e.g. http://127.0.0.1:9001)")
   parser.add_option("--subjectPrefix",
                     help="Prefix to add to subject in emails")
 
-  _checks = []
-
 
   def __init__(self):
-    (options, args) = self.parser.parse_args()
+    options = self.parser.parse_options()
 
-    if args:
-      self.parser.error("Unexpected positional arguments: {}"
-                        .format(repr(args)))
+    if not options.serverUrl:
+      self.parser.error("You must specify a --serverUrl argument.")
 
-    self.server = xmlrpclib.Server(urljoin(options.serverUrl, "RPC2"))
+    logging_support.LoggingSupport.initLogging(
+      loggingLevel=options.loggingLevel)
+
+    self.server = SupervisorClient(options.serverUrl)
     self.subjectPrefix = options.subjectPrefix
 
-    confDir = os.path.dirname(options.monitorConfPath)
-    confFileName = os.path.basename(options.monitorConfPath)
-    config = Config(confFileName, confDir)
+    self.config = loadConfig(options)
+    self.emailParams = loadEmailParamsFromConfig(self.config)
+    self.options = options
 
-    self.emailParams = (
-      dict(senderAddress=(
-            config.get("S1", "MODELS_MONITOR_EMAIL_SENDER_ADDRESS")),
-           recipients=config.get("S1", "MODELS_MONITOR_EMAIL_RECIPIENTS"),
-           awsRegion= config.get("S1", "MODELS_MONITOR_EMAIL_AWS_REGION"),
-           sesEndpoint=config.get("S1", "MODELS_MONITOR_EMAIL_SES_ENDPOINT"),
-           awsAccessKeyId=None,
-           awsSecretAccessKey=None))
+    g_logger.info("Initialized {}".format(repr(self)))
 
 
-  def checkAll(self):
-    """ Run all previously-registered checks and send an email upon failure
+  def __repr__(self):
+    invocation = " ".join("--{}={}".format(key, value)
+                          for key, value in vars(self.options).items())
+    return "{} {}".format(self.parser.get_prog_name(), invocation)
+
+
+  @MonitorDispatcher.preventDuplicates
+  def dispatchNotification(self, checkFn, excType, excValue, excTraceback):
+    """  Send notification.
+
+    :param function checkFn: The check function that raised an exception
+    :param type excType: Exception type
+    :param exception excValue: Exception value
+    :param traceback excTraceback: Exception traceback
+
+    Required by MonitorDispatcher abc protocol.
     """
-    for check in self._checks:
-      try:
-        check(self.server)
-      except Exception as err:
-        error_reporting.sendMonitorErrorEmail(
-          monitorName=__name__ + ":" + check.__name__,
-          resourceName=repr(self.server),
-          message=traceback.format_exc(),
-          subjectPrefix=self.subjectPrefix,
-          params=self.emailParams)
+    error_reporting.sendMonitorErrorEmail(
+      monitorName=__name__ + ":" + checkFn.__name__,
+      resourceName=repr(self),
+      message=self.formatTraceback(excType, excValue, excTraceback),
+      subjectPrefix=self.subjectPrefix,
+      params=self.emailParams
+    )
 
 
-  @classmethod
-  def registerCheck(cls, fn):
-    """ Function decorator to register an externally defined function as a
-    check.  Function must accept a ServerProxy instance as its first
-    argument.
+  @MonitorDispatcher.registerCheck
+  def checkSupervisordState(self):
+    """ Check that supervisord is running
     """
-    cls._checks.append(fn)
+    state = self.server.supervisor.getState()
+    if not isinstance(state, types.DictType):
+      raise SupervisorMonitorError("Unexpected response from"
+                                   " `server.supervisor.getState()`: {}"
+                                   .format(repr(state)))
+
+    if state.get("statename") != "RUNNING":
+      raise SupervisorNotRunning("Supervisor does not appear to be running:"
+                                 "{}".format(repr(state)))
 
 
 
-@SupervisorChecker.registerCheck
-def checkSupervisordState(server):
-  """ Check that supervisord is running
-  """
-  state = server.supervisor.getState()
-  if not isinstance(state, types.DictType):
-    raise SupervisorMonitorError("Unexpected response from"
-                                 " `server.supervisor.getState()`: {}"
-                                 .format(repr(state)))
+  @MonitorDispatcher.registerCheck
+  def checkSupervisorProcesses(self):
+    """ Check that there are no processes in a 'FATAL' state.
+    """
+    processes = self.server.supervisor.getAllProcessInfo()
 
-  if state.get("statename") != "RUNNING":
-    raise SupervisorNotRunning("Supervisor does not appear to be running:"
-                               "{}".format(repr(state)))
+    if not isinstance(processes, types.ListType):
+      raise SupervisorMonitorError(
+        "Unexpected response from`server.supervisor.getAllProcessInfo()`: {}"
+        .format(repr(processes)))
 
+    for process in processes:
+      if process.get("statename") == "FATAL":
+        logTail = self.server.supervisor.tailProcessLog(
+          process["group"] + ":" + process["name"], -2048, 2048)
 
-@SupervisorChecker.registerCheck
-def checkSupervisorProcesses(server):
-  """ Check that there are no processes in a 'FATAL' state.
-  """
-  processes = server.supervisor.getAllProcessInfo()
+        errMessage = (
+          "{group}:{name} is in a FATAL state: {description}"
+          "\n\nLast 2048 bytes of log:"
+          "\n\n=======================\n\n"
+          "{logTail}"
+          "\n\n=======================\n").format(
+            group=process.get("group"),
+            name=process.get("name"),
+            description=process.get("description"),
+            logTail=logTail[0])
 
-  if not isinstance(processes, types.ListType):
-    raise SupervisorMonitorError("Unexpected response from"
-                                 " `server.supervisor.getAllProcessInfo()`: {}"
-                                 .format(repr(processes)))
-
-  for process in processes:
-    if process.get("statename") == "FATAL":
-      logTail = server.supervisor.tailProcessLog(
-        process["group"] + ":" + process["name"], -2048, 2048)
-
-      errMessage = ("{group}:{name} is in a FATAL state: {description}"
-                    .format(group=process.get("group"),
-                            name=process.get("name"),
-                            description=process.get("description"))) + (
-                    "\n\nLast 2048 bytes of log:" +
-                    "\n\n=======================\n\n" +
-                    logTail[0] +
-                    "\n\n=======================\n")
-
-      raise SupervisorProcessInFatalState(errMessage)
-
+        raise SupervisorProcessInFatalState(errMessage)

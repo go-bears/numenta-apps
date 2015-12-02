@@ -165,8 +165,23 @@ class Config(ConfigParser, object):
     self.loadConfig()
 
 
+  def __repr__(self):
+    return "{cls}<name={name}, mode={mode}, baseDir={baseDir}>".format(
+      cls=self.__class__.__name__,
+      name=self._configName,
+      mode=self._mode,
+      baseDir=self.baseConfigDir)
+
+
+  # TODO ENG-96 - CONFIG_NAME is deprecated: it doesn't follow our coding
+  #   conventions for naming instance-level properties. Use configName instead.
   @property
   def CONFIG_NAME(self):
+    return self._configName
+
+
+  @property
+  def configName(self):
     return self._configName
 
 
@@ -300,7 +315,7 @@ class Config(ConfigParser, object):
   def clearAllConfigOverrides(self):
     """ Delete all configuration override objects
     WARNING: this deletes user-provisioned and user-specific information (e.g.,
-    AWS credentials, API key, grok server ID, etc.)
+    AWS credentials, API key, htm-it server ID, etc.)
     """
     configOverrideDir = self._getConfigOverrideDir()
     if os.path.exists(configOverrideDir):

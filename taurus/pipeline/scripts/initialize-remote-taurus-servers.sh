@@ -246,6 +246,7 @@ pushd "${REPOPATH}"
     export PYTHONPATH=/opt/numenta/anaconda/lib/python2.7/site-packages:\$PYTHONPATH
     export APPLICATION_CONFIG_PATH=/opt/numenta/products/taurus.metric_collectors/conf
     export TAURUS_HTM_SERVER=${TAURUS_SERVER_HOST_PRIVATE}
+    export TAURUS_API_KEY=${TAURUS_API_KEY}
     export XIGNITE_API_TOKEN=${XIGNITE_API_TOKEN}
     export TAURUS_TWITTER_ACCESS_TOKEN=${TAURUS_TWITTER_ACCESS_TOKEN}
     export TAURUS_TWITTER_ACCESS_TOKEN_SECRET=${TAURUS_TWITTER_ACCESS_TOKEN_SECRET}
@@ -307,8 +308,7 @@ pushd "${REPOPATH}"
     "cd /opt/numenta/products &&
      ./taurus/pipeline/scripts/uninstall_nupic.py &&
      ./install-taurus.sh \
-        /opt/numenta/anaconda/lib/python2.7/site-packages \
-        /opt/numenta/anaconda/bin &&
+        /opt/numenta/anaconda &&
      taurus-set-rabbitmq \
         --host=${RABBITMQ_HOST} \
         --user=${RABBITMQ_USER} \
@@ -326,6 +326,8 @@ pushd "${REPOPATH}"
         --host=${DYNAMODB_HOST} \
         --port=${DYNAMODB_PORT} \
         --table-suffix=${DYNAMODB_TABLE_SUFFIX} &&
+     taurus-set-api-key \
+        --apikey=${TAURUS_API_KEY} &&
      cd /opt/numenta/products/taurus/taurus/engine/repository &&
      python migrate.py &&
      cd /opt/numenta/products/taurus &&
@@ -356,8 +358,7 @@ pushd "${REPOPATH}"
   ssh -v -t ${SSH_ARGS} "${TAURUS_COLLECTOR_USER}"@"${TAURUS_COLLECTOR_HOST}" \
     "cd /opt/numenta/products &&
      ./install-taurus-metric-collectors.sh \
-        /opt/numenta/anaconda/lib/python2.7/site-packages \
-        /opt/numenta/anaconda/bin &&
+        /opt/numenta/anaconda &&
      taurus-set-collectorsdb-login \
         --host=${MYSQL_HOST} \
         --user=${MYSQL_USER} \
@@ -372,9 +373,8 @@ pushd "${REPOPATH}"
      python migrate.py &&
      cd /opt/numenta/products/taurus.metric_collectors &&
      taurus-collectors-set-opmode hot_standby &&
-     if [ -f supervisord.pid ]; then
-       supervisorctl --serverurl http://localhost:8001 shutdown
-     fi &&
+     supervisorctl --serverurl http://localhost:8001 shutdown &&
+     nta-wait-for-supervisord-stopped http://localhost:8001 &&
      py.test tests/deployment/resource_accessibility_test.py &&
      supervisord -c conf/supervisord.conf &&
      nta-wait-for-supervisord-running http://localhost:8001 &&

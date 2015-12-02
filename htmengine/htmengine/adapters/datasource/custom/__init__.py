@@ -27,7 +27,7 @@ import copy
 import datetime
 
 from htmengine.adapters.datasource.datasource_adapter_iface import (
-    DatasourceAdapterIface)
+  DatasourceAdapterIface)
 
 import htmengine.exceptions as app_exceptions
 from htmengine import htmengine_logging
@@ -56,7 +56,7 @@ class _CustomDatasourceAdapter(DatasourceAdapterIface):
 
   # Default metric period value to use when it's unknown
   # TODO: Should we use 0 since it's unknown "unknown" or default to 5 min?
-  #   Consider potential impact on web charts, grok-mobile
+  #   Consider potential impact on web charts, htm-it-mobile
   _DEFAULT_METRIC_PERIOD = 300  # 300 sec = 5 min
 
 
@@ -252,8 +252,8 @@ class _CustomDatasourceAdapter(DatasourceAdapterIface):
     :raises htmengine.exceptions.MetricNotSupportedError: if requested metric
       isn't supported
 
-    :raises htmengine.exceptions.MetricAlreadyMonitored: if the metric is already
-      being monitored
+    :raises htmengine.exceptions.MetricAlreadyMonitored: if the metric is
+      already being monitored
     """
     metricSpec = modelSpec["metricSpec"]
 
